@@ -1,0 +1,23 @@
+# Runs on the same VPS as chess. It reuses the Traefik started by ~/chess-app
+# (ports 80/443, Let's Encrypt) by joining that project's network.
+services:
+  skill:
+    image: ghcr.io/${GITHUB_USERNAME}/skill-frontend:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-chess-app_default}"
+      # Router/service names must not clash with chess ("frontend", "backend").
+      - "traefik.http.routers.skill.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.skill.entrypoints=websecure"
+      - "traefik.http.routers.skill.tls.certresolver=letsencrypt"
+      - "traefik.http.services.skill.loadbalancer.server.port=80"
+    networks:
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-chess-app_default}

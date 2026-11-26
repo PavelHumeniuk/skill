@@ -1,0 +1,117 @@
+name: CI/CD Pipeline
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  build-and-push:
+    name: Build and Push Docker Image
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set lower case owner name
+        run: echo "OWNER_LC=${OWNER,,}" >> "$GITHUB_ENV"
+        env:
+          OWNER: '${{ github.repository_owner }}'
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/skill-frontend:latest
+            ghcr.io/${{ env.OWNER_LC }}/skill-frontend:${{ github.sha }}
+
+  deploy:
+    name: Deploy to VPS
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set lower case owner name
+        run: echo "OWNER_LC=${OWNER,,}" >> "$GITHUB_ENV"
+        env:
+          OWNER: '${{ github.repository_owner }}'
+
+      - name: Copy compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "docker-compose.yml"
+          target: "~/skill-app"
+
+      - name: SSH into VPS and deploy
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          OWNER_LC: ${{ env.OWNER_LC }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: OWNER_LC,GHCR_USER,GHCR_TOKEN
+          script: |
+            set -e
+            cd ~/skill-app
+            printf 'GITHUB_USERNAME=%s\nDOMAIN=skill.phuman.me\n' "$OWNER_LC" > .env
+
+            if ! docker network inspect chess-app_default >/dev/null 2>&1; then
+              echo "Traefik network chess-app_default not found. Is ~/chess-app running?" >&2
+              exit 1
+            fi
+
+            # Pull with this run's short-lived token in a throwaway config,
+            # so the server's own registry logins (used by chess) stay untouched.
+            export DOCKER_CONFIG="$(mktemp -d)"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose pull
+            docker logout ghcr.io || true
+            rm -rf "$DOCKER_CONFIG"
+            unset DOCKER_CONFIG
+
+            docker compose up -d --remove-orphans
+            docker image prune -f
