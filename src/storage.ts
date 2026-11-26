@@ -3,6 +3,8 @@ import { isDayStr, type DayStr } from './dates';
 import {
   TOTAL_CELLS,
   applyDecay,
+  cleanDescription,
+  cleanName,
   createSkill,
   fill,
   removeCell,
@@ -58,8 +60,8 @@ function isSkill(v: unknown): v is Skill {
 function normalize(s: Skill): Skill {
   return {
     id: s.id,
-    name: s.name,
-    description: s.description,
+    name: cleanName(s.name) || 'Untitled',
+    description: cleanDescription(s.description),
     createdAt: s.createdAt,
     cells: Math.min(s.cells, TOTAL_CELLS),
     lastFilled: s.lastFilled,
@@ -159,7 +161,13 @@ function reducer(skills: Skill[], a: Action): Skill[] {
     case 'add':
       return [...skills, createSkill(a.name, a.description, a.level, a.today)];
     case 'update':
-      return mapOne(skills, a.id, (s) => ({ ...s, ...a.patch }));
+      return mapOne(skills, a.id, (s) => ({
+        ...s,
+        ...(a.patch.name !== undefined && cleanName(a.patch.name) ? { name: cleanName(a.patch.name) } : {}),
+        ...(a.patch.description !== undefined
+          ? { description: cleanDescription(a.patch.description) }
+          : {}),
+      }));
     case 'fill':
       return mapOne(skills, a.id, (s) => fill(s, a.today));
     case 'undo':
@@ -241,7 +249,14 @@ export function useSkills(today: DayStr, getToday: () => DayStr) {
     ),
   };
 
-  return { skills, actions, error, dismissError: useCallback(() => setError(null), []) };
+  return {
+    skills,
+    actions,
+    error,
+    // While saving is off, the warning must stay visible: changes would be lost on reload.
+    canDismissError: !blockSave.current,
+    dismissError: useCallback(() => setError(null), []),
+  };
 }
 
 export type SkillActions = ReturnType<typeof useSkills>['actions'];

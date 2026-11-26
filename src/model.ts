@@ -5,6 +5,16 @@ export const THRESHOLDS = [1, 2, 3, 5, 8, 13, 21] as const;
 export const MAX_LEVEL = THRESHOLDS.length; // 7 = Master
 export const TOTAL_CELLS = THRESHOLDS.reduce((a, b) => a + b, 0); // 53
 export const DECAY_DAYS = 30;
+export const NAME_MAX = 60;
+export const DESC_MAX = 2000;
+
+export function cleanName(name: string): string {
+  return name.trim().slice(0, NAME_MAX);
+}
+
+export function cleanDescription(text: string): string {
+  return text.trim().slice(0, DESC_MAX);
+}
 
 export type HistoryReason = 'fill' | 'undo' | 'decay' | 'manual';
 
@@ -70,8 +80,8 @@ export function createSkill(
   const level = Math.max(0, Math.min(MAX_LEVEL, Math.floor(startLevel)));
   return {
     id,
-    name: name.trim(),
-    description: description.trim(),
+    name: cleanName(name),
+    description: cleanDescription(description),
     createdAt: today,
     cells: cellsForLevel(level),
     lastFilled: null,
@@ -123,12 +133,14 @@ export function undoToday(skill: Skill, today: DayStr): Skill {
   }
   if (idx === -1) return skill;
   const entry = skill.history[idx];
+  // Drop the fill entry instead of logging an 'undo', so fill/undo spam can't grow history.
+  // ('undo' entries may still exist in older saved data and are handled by streak().)
   return {
     ...skill,
     cells: Math.max(0, skill.cells - entry.delta),
     lastFilled: entry.prevLastFilled ?? null,
     decayAnchor: entry.prevAnchor ?? skill.decayAnchor,
-    history: [...skill.history, { date: today, delta: -entry.delta, reason: 'undo' }],
+    history: skill.history.filter((_, i) => i !== idx),
   };
 }
 

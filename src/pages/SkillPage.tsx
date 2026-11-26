@@ -3,7 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { DayStr } from '../dates';
 import {
   DECAY_DAYS,
+  DESC_MAX,
   LEVEL_NAMES,
+  NAME_MAX,
   THRESHOLDS,
   daysUntilDecay,
   filledToday,
@@ -57,9 +59,17 @@ function SkillView({ skill, actions, today }: { skill: Skill; actions: SkillActi
   const [pop, setPop] = useState<{ index: number; key: number } | null>(null);
   const [levelUp, setLevelUp] = useState<number | null>(null);
   const prevCells = useRef(skill.cells);
+  // Animate only fills made on this screen, not changes synced from another tab.
+  const filledHere = useRef(false);
+  const fillHere = () => {
+    filledHere.current = true;
+    actions.fill(skill.id);
+  };
   useEffect(() => {
     const before = levelInfo(prevCells.current);
-    if (skill.cells > prevCells.current) {
+    const mine = filledHere.current;
+    filledHere.current = false;
+    if (skill.cells > prevCells.current && mine) {
       if (info.level > before.level) {
         setLevelUp(info.level);
         setPop(null);
@@ -143,7 +153,7 @@ function SkillView({ skill, actions, today }: { skill: Skill; actions: SkillActi
               </button>
             </>
           ) : (
-            <button className="btn btn-primary btn-big" onClick={() => actions.fill(skill.id)}>
+            <button className="btn btn-primary btn-big" onClick={fillHere}>
               {t.markToday}
             </button>
           )}
@@ -270,7 +280,7 @@ function EditableTitle({ value, onSave }: { value: string; onSave: (v: string) =
         className="title-input"
         autoFocus
         value={draft}
-        maxLength={60}
+        maxLength={NAME_MAX}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -308,6 +318,7 @@ function EditableDescription({ value, onSave }: { value: string; onSave: (v: str
         <textarea
           autoFocus
           rows={4}
+          maxLength={DESC_MAX}
           value={draft}
           placeholder={t.descriptionPlaceholder}
           onChange={(e) => setDraft(e.target.value)}

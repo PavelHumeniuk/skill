@@ -1,6 +1,6 @@
 # Deploy: skill.phuman.me
 
-Same setup as `chess`: a push to `main` runs tests, builds a Docker image to GHCR,
+Same idea as `chess`: a push to `main` runs tests, builds a Docker image to GHCR,
 then SSHes into the VPS and runs `docker compose up -d` in `~/skill-app`.
 
 The app is a static site (nginx). It has **no Traefik of its own**: it joins the
@@ -8,35 +8,52 @@ The app is a static site (nginx). It has **no Traefik of its own**: it joins the
 already runs, which also issues the Let's Encrypt certificate. So chess must be up
 for skill to be reachable.
 
-## One-time manual steps
+## How the deploy job talks to the server
 
-1. **DNS (GoDaddy, `phuman.me`)**: add an `A` record, name `skill`, value = the VPS IP
-   (same IP as the `chess` record), TTL 600.
-2. **GitHub repo**: create `PavelHumeniuk/skill` and push this folder to `main`.
-3. **Repo secrets** (Settings → Secrets and variables → Actions → *Repository secrets*),
-   same values as in the chess repo:
+- Plain `ssh`/`scp` on the runner, no third-party SSH actions, so the private key
+  never reaches code we don't control. All other actions are pinned to commit SHAs.
+- The server is verified against [`deploy/known_hosts`](deploy/known_hosts)
+  (`StrictHostKeyChecking yes`). If the server is rebuilt and its host keys change,
+  the deploy fails until that file is updated:
+  ```bash
+  ssh-keyscan -t ed25519,ecdsa,rsa 46.225.107.171 | grep -v '^#' | sort > deploy/known_hosts
+  ```
+  Check the fingerprints (`ssh-keygen -lf deploy/known_hosts`) against the server console first.
+- [`deploy/remote-deploy.sh`](deploy/remote-deploy.sh) runs on the server. The image is
+  pulled with the run's short-lived `GITHUB_TOKEN` in a throwaway Docker config.
 
-   | Secret | Value |
-   | :--- | :--- |
-   | `VPS_HOST` | VPS IP |
-   | `VPS_USER` | SSH user (e.g. `root`) |
-   | `VPS_SSH_KEY` | private SSH key that can log in to the VPS |
+## Repo secrets
 
-   No other secrets are needed: the deploy pulls the image with the run's own `GITHUB_TOKEN`.
-4. Push to `main` and watch the **Actions** tab. On the first run Traefik requests the
-   certificate; give it a minute, then open https://skill.phuman.me.
+| Secret | Value |
+| :--- | :--- |
+| `VPS_HOST` | `46.225.107.171` |
+| `VPS_USER` | `root` |
+| `VPS_SSH_KEY` | private key of the dedicated deploy key (below) |
 
-## Check on the VPS (if something fails)
+## Dedicated deploy key
+
+Use a key that exists only for this CI job, not your personal `~/.ssh/id_ed25519`:
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "skill-deploy (GitHub Actions)" -f ~/.ssh/skill_deploy
+ssh-copy-id -i ~/.ssh/skill_deploy.pub root@46.225.107.171
+gh secret set VPS_SSH_KEY -R PavelHumeniuk/skill < ~/.ssh/skill_deploy
+```
+
+To revoke it later, delete its line (comment `skill-deploy`) from
+`/root/.ssh/authorized_keys` on the server.
+
+## DNS
+
+GoDaddy, `phuman.me`: `A` record `skill` → `46.225.107.171`.
+
+## Troubleshooting on the VPS
 
 ```bash
 docker network ls | grep chess-app_default   # must exist; created by ~/chess-app
 cd ~/skill-app && docker compose ps
 docker logs chess-app-traefik-1 2>&1 | grep -i skill   # certificate / routing errors
 ```
-
-If the chess folder on the server isn't `~/chess-app`, its network has a different
-name: put `TRAEFIK_NETWORK=<name>_default` in the workflow's `.env` line and the
-`docker network inspect` check.
 
 ## Data
 

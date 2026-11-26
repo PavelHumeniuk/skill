@@ -32,16 +32,18 @@ function useToday() {
 
 export default function App() {
   const { today, getToday } = useToday();
-  const { skills, actions, error, dismissError } = useSkills(today, getToday);
+  const { skills, actions, error, canDismissError, dismissError } = useSkills(today, getToday);
 
   return (
     <div className="app">
       {error && (
         <div className="banner" role="alert">
           <span>{error}</span>
-          <button className="banner-close" onClick={dismissError} aria-label={t.dismiss} title={t.dismiss}>
-            ×
-          </button>
+          {canDismissError && (
+            <button className="banner-close" onClick={dismissError} aria-label={t.dismiss} title={t.dismiss}>
+              ×
+            </button>
+          )}
         </div>
       )}
       <Routes>

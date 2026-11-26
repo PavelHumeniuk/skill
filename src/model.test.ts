@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, daysBetween } from './dates';
 import {
+  DESC_MAX,
   MAX_LEVEL,
+  NAME_MAX,
   TOTAL_CELLS,
   applyDecay,
   cellsForLevel,
@@ -83,6 +85,21 @@ describe('fill / undo', () => {
     expect(c.lastFilled).toBe(D);
     expect(c.decayAnchor).toBe(D);
     expect(fill(c, day2).cells).toBe(b.cells);
+  });
+
+  it('fill + undo leaves history as it was, so spamming cannot grow it', () => {
+    let s = fill(createSkill('x', '', 0, D), D);
+    const day = addDays(D, 1);
+    const before = s.history.length;
+    for (let i = 0; i < 50; i++) s = undoToday(fill(s, day), day);
+    expect(s.history.length).toBe(before);
+    expect(s.cells).toBe(1);
+  });
+
+  it('streak still honours legacy undo entries', () => {
+    let s = fill(createSkill('x', '', 0, D), D);
+    s = { ...s, history: [...s.history, { date: D, delta: -1, reason: 'undo' as const }] };
+    expect(streak(s, D)).toBe(0);
   });
 
   it('undo does nothing when today is not filled', () => {
@@ -200,6 +217,18 @@ describe('backup', () => {
     const [s] = parseData(d);
     expect(s.cells).toBe(TOTAL_CELLS);
     expect('extra' in s).toBe(false);
+  });
+
+  it('trims over-long or empty names and descriptions', () => {
+    const d = valid();
+    d.skills[0].name = 'x'.repeat(500);
+    d.skills[0].description = 'y'.repeat(10_000);
+    const [s] = parseData(d);
+    expect(s.name.length).toBe(NAME_MAX);
+    expect(s.description.length).toBe(DESC_MAX);
+    const d2 = valid();
+    d2.skills[0].name = '   ';
+    expect(parseData(d2)[0].name).toBe('Untitled');
   });
 });
 

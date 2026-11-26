@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LEVEL_NAMES, MAX_LEVEL, cellsForLevel } from '../model';
+import { DESC_MAX, LEVEL_NAMES, MAX_LEVEL, NAME_MAX, cellsForLevel } from '../model';
 import { t } from '../strings';
 
 type Props = {
@@ -51,7 +51,7 @@ export default function AddSkillDialog({ open, onClose, onCreate }: Props) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t.namePlaceholder}
-            maxLength={60}
+            maxLength={NAME_MAX}
             required
           />
         </label>
@@ -63,6 +63,7 @@ export default function AddSkillDialog({ open, onClose, onCreate }: Props) {
             onChange={(e) => setDescription(e.target.value)}
             placeholder={t.descriptionPlaceholder}
             rows={3}
+            maxLength={DESC_MAX}
           />
         </label>
 
